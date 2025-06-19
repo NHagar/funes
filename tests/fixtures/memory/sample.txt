@@ -1,0 +1,8 @@
+This is a sample memory file for testing.
+
+It contains multiple lines of text to test the file reading functionality.
+
+Key points:
+- Point one
+- Point two  
+- Point three
