@@ -3,7 +3,7 @@
 from typing import Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal
+from textual.containers import Container
 from textual.reactive import reactive
 from textual.widgets import (
     Button,
@@ -18,6 +18,7 @@ from textual.widgets import (
 from textual.worker import Worker
 
 from .orchestrator import ToolCallEvent, chat_run, get_available_models
+from .tools import MEM_DIR
 
 
 class MemChatApp(App):
@@ -28,38 +29,31 @@ class MemChatApp(App):
         layout: grid;
         grid-size: 2 2;
         grid-gutter: 1;
-        height: 1fr;
+        height: 100%;
     }
 
     .model-selector {
-        grid-column: 1 / 3;
+        column-span: 2;
         height: 3;
     }
 
+    /* The two panes follow insertion order: row 2 col 1 then row 2 col 2 */
     .baseline-pane {
         border: solid $primary;
-        border-title: "Baseline (No Memory)";
-        grid-column: 1;
-        grid-row: 2;
     }
 
     .augmented-pane {
         border: solid $secondary;
-        border-title: "With Memory";
-        grid-column: 2;
-        grid-row: 2;
     }
 
     .tool-log {
         height: 10;
         border: solid $accent;
-        border-title: "Tool Call Log";
     }
 
     .input-area {
         height: 5;
         border: solid $success;
-        border-title: "Prompt Input";
     }
 
     .status-bar {
@@ -103,55 +97,62 @@ class MemChatApp(App):
 
             tools.MEM_DIR = Path(self.memory_dir)
 
-        # Ensure memory directory exists
-        from .tools import MEM_DIR
-
         MEM_DIR.mkdir(exist_ok=True)
 
-        # Update status
+    def on_ready(self) -> None:
         self.query_one("#status", Static).update(f"Memory directory: {MEM_DIR}")
 
     def compose(self) -> ComposeResult:
         """Compose the TUI layout."""
         yield Header()
 
+        # --------- MAIN GRID -------------------------------------------------
         with Container(classes="main-container"):
-            # Model selector row
-            with Horizontal(classes="model-selector"):
+            # ▸ 1. Model selector row
+            with Container(classes="model-selector"):
                 yield Static("Model:", id="model-label")
-                yield Select(
-                    [("Loading models...", "loading")],
-                    value="loading",
-                    id="model-select",
-                )
+                yield Select([("Loading…", "loading")], id="model-select")
                 yield Button("Refresh Models", id="refresh-models", variant="default")
 
-            # Main content panes
-            yield MarkdownViewer(
+            # ▸ 2. Baseline pane (row 2, col 1)
+            baseline = MarkdownViewer(
                 "Select a model and enter a prompt to see the baseline response.",
                 classes="baseline-pane",
                 id="baseline-viewer",
             )
+            baseline.border_title = "Baseline (No Memory)"
+            yield baseline
 
-            yield MarkdownViewer(
+            # ▸ 3. Augmented pane (row 2, col 2)
+            augmented = MarkdownViewer(
                 "The memory-augmented response will appear here.",
                 classes="augmented-pane",
                 id="augmented-viewer",
             )
+            augmented.border_title = "With Memory"
+            yield augmented
 
-        # Tool call log
-        with Container(classes="tool-log"):
+        # --------- TOOL CALL LOG --------------------------------------------
+        tool_log = Container(classes="tool-log")
+        tool_log.border_title = "Tool Call Log"
+        yield tool_log
+
+        with tool_log:
             yield DataTable(id="tool-table")
 
-        # Input area
-        with Container(classes="input-area"):
-            yield Input(placeholder="Enter your prompt here...", id="prompt-input")
-            with Horizontal():
+        # --------- PROMPT INPUT AREA ----------------------------------------
+        prompt_input = Container(classes="input-area")
+        prompt_input.border_title = "Prompt Input"
+        yield prompt_input
+
+        with prompt_input:
+            yield Input(placeholder="Enter your prompt here…", id="prompt-input")
+            with Container():  # small horizontal stack
                 yield Button("Submit", id="submit-btn", variant="primary")
                 yield Button("Clear", id="clear-btn", variant="default")
 
-        # Status bar
-        yield Static("Ready", id="status", classes="status-bar")
+        # --------- STATUS BAR + FOOTER --------------------------------------
+        yield Static("Ready", id="status", classes="status-bar")  # ← restores #status
         yield Footer()
 
     async def _load_models(self) -> list[str]:
@@ -167,42 +168,32 @@ class MemChatApp(App):
                 model_select = self.query_one("#model-select", Select)
 
                 # Update model options
-                options = [(model, model) for model in models]
-                model_select.set_options(options)
+                model_select.set_options([(m, m) for m in models])
 
-                # Set default model if available
-                if "gpt-4o-mini" in models:
-                    model_select.value = "gpt-4o-mini"
-                    self.current_model = "gpt-4o-mini"
-                elif models:
-                    model_select.value = models[0]
-                    self.current_model = models[0]
+                # Set default model
+                default = "gpt-4o-mini"
+                model_select.value = default
+                self.current_model = default
 
         elif event.worker.name == "_run_chat":
+            baseline_viewer = self.query_one("#baseline-viewer", MarkdownViewer)
+            augmented_viewer = self.query_one("#augmented-viewer", MarkdownViewer)
+            status = self.query_one("#status", Static)
+
             if event.state == "success":
                 baseline, augmented, events = event.worker.result
-
-                # Update response panes
-                self.query_one("#baseline-viewer", MarkdownViewer).document = baseline
-                self.query_one("#augmented-viewer", MarkdownViewer).document = augmented
-
-                # Update tool call table
+                baseline_viewer.update(baseline)  # <-- update, not .document
+                augmented_viewer.update(augmented)
                 self._update_tool_table(events)
 
-                # Update status
                 tool_count = len(events)
                 plural = "s" if tool_count != 1 else ""
-                self.query_one("#status", Static).update(
-                    f"Complete. {tool_count} tool call{plural} made."
-                )
-
+                status.update(f"Complete. {tool_count} tool call{plural} made.")
             elif event.state == "error":
-                error_msg = f"Error: {str(event.worker.error)}"
-                self.query_one("#baseline-viewer", MarkdownViewer).document = error_msg
-                self.query_one("#augmented-viewer", MarkdownViewer).document = error_msg
-                self.query_one("#status", Static).update(
-                    "Error occurred during processing"
-                )
+                error_msg = f"Error: {event.worker.error}"
+                baseline_viewer.update(error_msg)
+                augmented_viewer.update(error_msg)
+                status.update("Error occurred during processing")
 
             self.is_processing = False
 
@@ -213,12 +204,13 @@ class MemChatApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
-        if event.button.id == "submit-btn":
-            self.action_submit_prompt()
-        elif event.button.id == "clear-btn":
-            self.action_clear_responses()
-        elif event.button.id == "refresh-models":
-            self.run_worker(self._load_models, exclusive=True)
+        match event.button.id:
+            case "submit-btn":
+                self.action_submit_prompt()
+            case "clear-btn":
+                self.action_clear_responses()
+            case "refresh-models":
+                self.run_worker(self._load_models, exclusive=True)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
@@ -233,68 +225,53 @@ class MemChatApp(App):
         if not prompt:
             self.query_one("#status", Static).update("Please enter a prompt")
             return
-
         if self.is_processing:
-            self.query_one("#status", Static).update("Already processing a request...")
+            self.query_one("#status", Static).update("Already processing a request…")
             return
 
         # Clear input and start processing
         prompt_input.value = ""
         self.is_processing = True
-        self.query_one("#status", Static).update("Processing...")
+        self.query_one("#status", Static).update("Processing…")
 
-        # Run chat in background
         self.run_worker(self._run_chat, prompt, self.current_model, exclusive=True)
 
-    async def _run_chat(self, prompt: str, model: str) -> tuple:
+    async def _run_chat(self, prompt: str, model: str):
         """Run chat session in background worker."""
         try:
-            baseline, augmented, events = chat_run(
-                prompt=prompt, model=model, memory_dir=self.memory_dir
-            )
-            return baseline, augmented, events
+            return chat_run(prompt=prompt, model=model, memory_dir=self.memory_dir)
         except Exception as e:
-            return f"Error: {str(e)}", f"Error: {str(e)}", []
+            return (f"Error: {e}",) * 3  # baseline, augmented, events
 
     def _update_tool_table(self, events: list[ToolCallEvent]) -> None:
         """Update the tool call table with events."""
         table = self.query_one("#tool-table", DataTable)
-
-        # Clear existing data
         table.clear(columns=True)
 
         if not events:
             return
 
-        # Add columns
         table.add_columns("Time", "Tool", "Arguments", "Result")
-
-        # Add rows
-        for event in events:
+        for ev in events:
             table.add_row(
-                event.timestamp.split("T")[1][:8],  # Just time portion
-                event.tool_name,
-                str(event.arguments),
-                event.result[:50] + "..." if len(event.result) > 50 else event.result,
+                ev.timestamp.split("T")[1][:8],
+                ev.tool_name,
+                str(ev.arguments),
+                (ev.result[:50] + "…") if len(ev.result) > 50 else ev.result,
             )
 
     def action_clear_responses(self) -> None:
         """Clear all response panes and tool table."""
-        baseline_viewer = self.query_one("#baseline-viewer", MarkdownViewer)
-        baseline_viewer.document = (
+        self.query_one("#baseline-viewer", MarkdownViewer).update(
             "Select a model and enter a prompt to see the baseline response."
         )
-
-        augmented_viewer = self.query_one("#augmented-viewer", MarkdownViewer)
-        augmented_viewer.document = "The memory-augmented response will appear here."
-
-        table = self.query_one("#tool-table", DataTable)
-        table.clear(columns=True)
-
+        self.query_one("#augmented-viewer", MarkdownViewer).update(
+            "The memory-augmented response will appear here."
+        )
+        self.query_one("#tool-table", DataTable).clear(columns=True)
         self.query_one("#status", Static).update("Cleared")
 
 
 def run_tui(memory_dir: Optional[str] = None) -> None:
     """Run the MemChat TUI application."""
-    app = MemChatApp(memory_dir=memory_dir)
-    app.run()
+    MemChatApp(memory_dir=memory_dir).run()
