@@ -3,9 +3,12 @@
 import os
 from pathlib import Path
 
+from agents import function_tool
+
 MEM_DIR = Path.cwd() / "memory"
 
 
+@function_tool
 def list_memory_files() -> list[str]:
     """List all memory files recursively from the memory directory.
 
@@ -28,6 +31,7 @@ def list_memory_files() -> list[str]:
     return sorted(files)
 
 
+@function_tool
 def read_memory_file(path: str) -> str:
     """Read a memory file by its relative path.
 
@@ -65,64 +69,3 @@ def read_memory_file(path: str) -> str:
             e.end,
             f"File {path} is not valid UTF-8: {e.reason}",
         ) from e
-
-
-# Tool definitions for OpenAI function calling
-MEMORY_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_memory_files",
-            "description": "List all available memory files that can be read",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_memory_file",
-            "description": "Read the contents of a specific memory file",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path to the memory file to read",
-                    }
-                },
-                "required": ["path"],
-            },
-        },
-    },
-]
-
-
-def execute_tool_call(tool_name: str, arguments: dict) -> str:
-    """Execute a tool call and return the result as a string.
-
-    Args:
-        tool_name: Name of the tool to execute
-        arguments: Dictionary of arguments for the tool
-
-    Returns:
-        String result of the tool execution
-    """
-    if tool_name == "list_memory_files":
-        files = list_memory_files()
-        if not files:
-            return "No memory files found."
-        return "\n".join(f"- {file}" for file in files)
-
-    elif tool_name == "read_memory_file":
-        path = arguments.get("path")
-        if not path:
-            return "Error: 'path' parameter is required"
-
-        try:
-            content = read_memory_file(path)
-            return f"Contents of {path}:\n\n{content}"
-        except (FileNotFoundError, ValueError, UnicodeDecodeError) as e:
-            return f"Error reading {path}: {str(e)}"
-
-    else:
-        return f"Error: Unknown tool '{tool_name}'"

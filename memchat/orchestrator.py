@@ -1,12 +1,12 @@
 """Orchestrator for running baseline and memory-augmented chat sessions."""
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
+from agents import Agent, Runner, ToolCallItem
 from openai import OpenAI
 
-from .tools import MEMORY_TOOLS, execute_tool_call
+from .tools import list_memory_files, read_memory_file
 
 
 class ToolCallEvent:
@@ -56,7 +56,7 @@ def chat_run(
     baseline_response = _run_baseline_chat(client, prompt, model)
 
     # Run augmented chat (with memory tools)
-    augmented_response, tool_events = _run_augmented_chat(client, prompt, model)
+    augmented_response, tool_events = _run_augmented_chat(prompt, model)
 
     return baseline_response, augmented_response, tool_events
 
@@ -74,101 +74,41 @@ def _run_baseline_chat(client: OpenAI, prompt: str, model: str) -> str:
         return f"Error in baseline chat: {str(e)}"
 
 
-def _run_augmented_chat(
-    client: OpenAI, prompt: str, model: str
-) -> tuple[str, list[ToolCallEvent]]:
+def _run_augmented_chat(prompt: str, model: str) -> tuple[str, list[ToolCallEvent]]:
     """Run chat completion with memory tools available."""
-    tool_events = []
-    messages = [{"role": "user", "content": prompt}]
+    agent = Agent(
+        name="MemoryRetriever",
+        instructions="Consult memory files when they are relevant to the conversation.",
+        tools=[list_memory_files, read_memory_file],
+        model=model,
+    )
+
+    runner = Runner()
+    response = runner.run(
+        agent,
+        input=prompt,
+    )
 
     try:
-        # Initial chat completion with tools
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=MEMORY_TOOLS,
-            tool_choice="auto",
-            temperature=0.7,
-            max_tokens=1000,
-        )
+        output_text = response.final_output
+        new_items = response.new_items
+        tool_events = [i for i in new_items if isinstance(i, ToolCallItem)]
 
-        response_message = response.choices[0].message
-        messages.append(
-            {
-                "role": "assistant",
-                "content": response_message.content,
-                "tool_calls": response_message.tool_calls,
-            }
-        )
-
-        # Handle tool calls if any
-        if response_message.tool_calls:
-            for tool_call in response_message.tool_calls:
-                timestamp = datetime.now().isoformat()
-
-                # Execute the tool call
-                try:
-                    arguments = json.loads(tool_call.function.arguments)
-                    result = execute_tool_call(tool_call.function.name, arguments)
-
-                    # Log the tool call event
-                    event = ToolCallEvent(
-                        timestamp=timestamp,
-                        tool_name=tool_call.function.name,
-                        arguments=arguments,
-                        result=result,
-                    )
-                    tool_events.append(event)
-
-                    # Add tool result to messages
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result,
-                        }
-                    )
-
-                except Exception as e:
-                    error_result = (
-                        f"Error executing {tool_call.function.name}: {str(e)}"
-                    )
-                    event = ToolCallEvent(
-                        timestamp=timestamp,
-                        tool_name=tool_call.function.name,
-                        arguments={},
-                        result=error_result,
-                    )
-                    tool_events.append(event)
-
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": error_result,
-                        }
-                    )
-
-            # Get final response after tool calls
-            final_response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=MEMORY_TOOLS,
-                tool_choice="auto",
-                temperature=0.7,
-                max_tokens=1000,
+        tool_events = [
+            ToolCallEvent(
+                timestamp=datetime.now().isoformat(),
+                tool_name=item.tool_name,
+                arguments=item.arguments,
+                result=item.result,
             )
+            for item in tool_events
+        ]
 
-            final_message = final_response.choices[0].message
-            return final_message.content or "", tool_events
-
-        else:
-            # No tool calls, return the original response
-            return response_message.content or "", tool_events
+        return output_text, tool_events
 
     except Exception as e:
         error_msg = f"Error in augmented chat: {str(e)}"
-        return error_msg, tool_events
+        return error_msg, []
 
 
 def get_available_models() -> list[str]:
