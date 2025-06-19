@@ -1,6 +1,6 @@
 """Textual TUI for MemChat application."""
 
-from typing import List, Optional
+from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
@@ -30,47 +30,47 @@ class MemChatApp(App):
         grid-gutter: 1;
         height: 1fr;
     }
-    
+
     .model-selector {
         grid-column: 1 / 3;
         height: 3;
     }
-    
+
     .baseline-pane {
         border: solid $primary;
         border-title: "Baseline (No Memory)";
         grid-column: 1;
         grid-row: 2;
     }
-    
+
     .augmented-pane {
         border: solid $secondary;
         border-title: "With Memory";
         grid-column: 2;
         grid-row: 2;
     }
-    
+
     .tool-log {
         height: 10;
         border: solid $accent;
         border-title: "Tool Call Log";
     }
-    
+
     .input-area {
         height: 5;
         border: solid $success;
         border-title: "Prompt Input";
     }
-    
+
     .status-bar {
         height: 1;
         background: $surface;
     }
-    
+
     #prompt-input {
         height: 3;
     }
-    
+
     #tool-table {
         height: 1fr;
     }
@@ -88,12 +88,12 @@ class MemChatApp(App):
     def __init__(self, memory_dir: Optional[str] = None):
         super().__init__()
         self.memory_dir = memory_dir
-        self.available_models: List[str] = []
+        self.available_models: list[str] = []
 
     async def on_mount(self) -> None:
         """Initialize the app on mount."""
         # Load available models
-        worker = self.run_worker(self._load_models, exclusive=True)
+        self.run_worker(self._load_models, exclusive=True)
 
         # Set up initial memory directory
         if self.memory_dir:
@@ -124,7 +124,7 @@ class MemChatApp(App):
                     value="loading",
                     id="model-select",
                 )
-                yield Button("Refresh Models", id="refresh-models", variant="outline")
+                yield Button("Refresh Models", id="refresh-models", variant="default")
 
             # Main content panes
             yield MarkdownViewer(
@@ -148,13 +148,13 @@ class MemChatApp(App):
             yield Input(placeholder="Enter your prompt here...", id="prompt-input")
             with Horizontal():
                 yield Button("Submit", id="submit-btn", variant="primary")
-                yield Button("Clear", id="clear-btn", variant="outline")
+                yield Button("Clear", id="clear-btn", variant="default")
 
         # Status bar
         yield Static("Ready", id="status", classes="status-bar")
         yield Footer()
 
-    async def _load_models(self) -> List[str]:
+    async def _load_models(self) -> list[str]:
         """Load available OpenAI models."""
         return get_available_models()
 
@@ -177,6 +177,34 @@ class MemChatApp(App):
                 elif models:
                     model_select.value = models[0]
                     self.current_model = models[0]
+
+        elif event.worker.name == "_run_chat":
+            if event.state == "success":
+                baseline, augmented, events = event.worker.result
+
+                # Update response panes
+                self.query_one("#baseline-viewer", MarkdownViewer).document = baseline
+                self.query_one("#augmented-viewer", MarkdownViewer).document = augmented
+
+                # Update tool call table
+                self._update_tool_table(events)
+
+                # Update status
+                tool_count = len(events)
+                plural = "s" if tool_count != 1 else ""
+                self.query_one("#status", Static).update(
+                    f"Complete. {tool_count} tool call{plural} made."
+                )
+
+            elif event.state == "error":
+                error_msg = f"Error: {str(event.worker.error)}"
+                self.query_one("#baseline-viewer", MarkdownViewer).document = error_msg
+                self.query_one("#augmented-viewer", MarkdownViewer).document = error_msg
+                self.query_one("#status", Static).update(
+                    "Error occurred during processing"
+                )
+
+            self.is_processing = False
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle model selection change."""
@@ -228,36 +256,7 @@ class MemChatApp(App):
         except Exception as e:
             return f"Error: {str(e)}", f"Error: {str(e)}", []
 
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        """Handle chat worker completion."""
-        if event.worker.name == "_run_chat":
-            if event.state == "success":
-                baseline, augmented, events = event.worker.result
-
-                # Update response panes
-                self.query_one("#baseline-viewer", MarkdownViewer).document = baseline
-                self.query_one("#augmented-viewer", MarkdownViewer).document = augmented
-
-                # Update tool call table
-                self._update_tool_table(events)
-
-                # Update status
-                tool_count = len(events)
-                self.query_one("#status", Static).update(
-                    f"Complete. {tool_count} tool call{'s' if tool_count != 1 else ''} made."
-                )
-
-            elif event.state == "error":
-                error_msg = f"Error: {str(event.worker.error)}"
-                self.query_one("#baseline-viewer", MarkdownViewer).document = error_msg
-                self.query_one("#augmented-viewer", MarkdownViewer).document = error_msg
-                self.query_one("#status", Static).update(
-                    "Error occurred during processing"
-                )
-
-            self.is_processing = False
-
-    def _update_tool_table(self, events: List[ToolCallEvent]) -> None:
+    def _update_tool_table(self, events: list[ToolCallEvent]) -> None:
         """Update the tool call table with events."""
         table = self.query_one("#tool-table", DataTable)
 
@@ -281,21 +280,18 @@ class MemChatApp(App):
 
     def action_clear_responses(self) -> None:
         """Clear all response panes and tool table."""
-        self.query_one(
-            "#baseline-viewer", MarkdownViewer
-        ).document = "Select a model and enter a prompt to see the baseline response."
-        self.query_one(
-            "#augmented-viewer", MarkdownViewer
-        ).document = "The memory-augmented response will appear here."
+        baseline_viewer = self.query_one("#baseline-viewer", MarkdownViewer)
+        baseline_viewer.document = (
+            "Select a model and enter a prompt to see the baseline response."
+        )
+
+        augmented_viewer = self.query_one("#augmented-viewer", MarkdownViewer)
+        augmented_viewer.document = "The memory-augmented response will appear here."
 
         table = self.query_one("#tool-table", DataTable)
         table.clear(columns=True)
 
         self.query_one("#status", Static).update("Cleared")
-
-    def action_quit(self) -> None:
-        """Quit the application."""
-        self.exit()
 
 
 def run_tui(memory_dir: Optional[str] = None) -> None:

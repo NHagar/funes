@@ -46,8 +46,8 @@ def read_memory_file(path: str) -> str:
     # Security check: ensure the path is within memory directory
     try:
         file_path.resolve().relative_to(MEM_DIR.resolve())
-    except ValueError:
-        raise ValueError(f"Path outside memory directory: {path}")
+    except ValueError as e:
+        raise ValueError(f"Path outside memory directory: {path}") from e
 
     if not file_path.exists():
         raise FileNotFoundError(f"Memory file not found: {path}")
@@ -64,7 +64,7 @@ def read_memory_file(path: str) -> str:
             e.start,
             e.end,
             f"File {path} is not valid UTF-8: {e.reason}",
-        )
+        ) from e
 
 
 # Tool definitions for OpenAI function calling
