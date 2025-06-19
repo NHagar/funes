@@ -64,14 +64,11 @@ def chat_run(
 def _run_baseline_chat(client: OpenAI, prompt: str, model: str) -> str:
     """Run baseline chat completion without any tools."""
     try:
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=1000,
+            input=prompt,
         )
-
-        return response.choices[0].message.content or ""
+        return response.output_text
 
     except Exception as e:
         return f"Error in baseline chat: {str(e)}"
