@@ -22,6 +22,8 @@ dependencies = [
     "openai>=1.25.0",
     "openai-agents>=0.0.19",
     "typer>=0.12.0",
+    "streamlit>=1.28.0",
+    "ruff>=0.12.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,7 @@ dev = [
 
 [project.scripts]
 memchat = "memchat.cli:main"
+funes-ui = "run_ui:main"
 
 [project.urls]
 Homepage = "https://github.com/nhagar/funes"
