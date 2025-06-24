@@ -21,7 +21,6 @@ classifiers = [
 dependencies = [
     "openai>=1.25.0",
     "openai-agents>=0.0.19",
-    "textual>=0.57.0",
     "typer>=0.12.0",
 ]
 
