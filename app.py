@@ -22,7 +22,7 @@ def get_base_response(prompt: str, model: str, api_key: str) -> str:
 
 async def get_agent_response(
     prompt: str, model: str, api_key: str
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[dict]]:
     """Get response from agent with memory tools."""
     # Set API key in environment for the agents library
     os.environ["OPENAI_API_KEY"] = api_key
@@ -41,7 +41,11 @@ async def get_agent_response(
 
     output_text = response.final_output
     new_items = response.new_items
-    tool_calls = [i.raw_item.name for i in new_items if isinstance(i, ToolCallItem)]
+    tool_calls = [
+        {"name": i.raw_item.name, "arguments": i.raw_item.arguments}
+        for i in new_items
+        if isinstance(i, ToolCallItem)
+    ]
 
     return output_text, tool_calls
 
@@ -168,7 +172,11 @@ def main():
                         if tool_calls:
                             st.subheader("🔧 Tool Calls Used")
                             for i, tool_call in enumerate(tool_calls, 1):
-                                st.code(f"{i}. {tool_call}")
+                                st.code(f"{i}. {tool_call['name']}")
+                                if tool_call["arguments"]:
+                                    title = f"Arguments for {tool_call['name']}"
+                                    with st.expander(title):
+                                        st.json(tool_call["arguments"])
                         else:
                             st.info("No tool calls were made")
 

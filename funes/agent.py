@@ -96,6 +96,7 @@ async def main(prompt, model):
     output_text = response.final_output
     new_items = response.new_items
     tool_calls = [i.raw_item.name for i in new_items if isinstance(i, ToolCallItem)]  # type: ignore
+    print([i.raw_item.arguments for i in new_items if isinstance(i, ToolCallItem)])  # type: ignore
 
     print("Agent Response:", output_text)
     print("Tool Calls:", tool_calls)
