@@ -1,3 +1,4 @@
+.envrc
 .env
 .venv/
 .ruff_cache/

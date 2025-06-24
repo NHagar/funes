@@ -5,8 +5,11 @@ from pathlib import Path
 import streamlit as st
 from agents import Agent, Runner, ToolCallItem
 from openai import OpenAI
+from dotenv import load_dotenv
 
 from funes.agent import list_memory_files, read_memory_file
+
+load_dotenv()
 
 MEM_DIR = Path.cwd() / "memory"
 
@@ -73,7 +76,7 @@ def main():
 
         # API Key input
         api_key = st.text_input(
-            "OpenAI API Key", type="password", help="Enter your OpenAI API key"
+            "OpenAI API Key", type="password", help="Enter your OpenAI API key", value=os.getenv("OPENAI_API_KEY", "")
         )
 
         # Model selection
