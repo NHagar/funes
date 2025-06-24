@@ -112,7 +112,9 @@ def main():
                     for file in memory_files:
                         if st.button(f"📄 {file}", key=f"file_{file}"):
                             try:
-                                content = Path(file).read_text(encoding="utf-8")
+                                content = (MEM_DIR / Path(file)).read_text(
+                                    encoding="utf-8"
+                                )
                                 st.text_area(
                                     f"Contents of {file}",
                                     content,
