@@ -14,3 +14,4 @@ build/
 .coverage.*
 *.mypy_cache/
 *.pyo
+memory/
