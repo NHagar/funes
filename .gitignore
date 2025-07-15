@@ -13,3 +13,4 @@ api/.openmemory*
 .openmemory/
 ui/package-lock.json
 user_data/
+docker-compose.yml
